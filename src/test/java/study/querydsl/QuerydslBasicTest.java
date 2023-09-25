@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 import study.querydsl.dto.MemberDto;
 import study.querydsl.dto.QMemberDto;
@@ -31,6 +32,7 @@ import study.querydsl.entity.Team;
 import java.util.List;
 
 import static com.querydsl.core.types.Projections.*;
+import static com.querydsl.core.types.dsl.Expressions.*;
 import static com.querydsl.jpa.JPAExpressions.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static study.querydsl.entity.QMember.*;
@@ -40,7 +42,8 @@ import static study.querydsl.entity.QTeam.*;
 @Transactional
 public class QuerydslBasicTest {
 
-    @Autowired EntityManager em;
+    @Autowired
+    EntityManager em;
     JPAQueryFactory queryFactory;
 
     @BeforeEach
@@ -66,8 +69,8 @@ public class QuerydslBasicTest {
     @Test
     public void startJPQL() {
         String qlString = "SELECT m" +
-                        " FROM Member m" +
-                        " where m.username = :username";
+                " FROM Member m" +
+                " where m.username = :username";
 
         Member findMember = em.createQuery(qlString, Member.class)
                 .setParameter("username", "member1")
@@ -103,7 +106,7 @@ public class QuerydslBasicTest {
 
     @Test
     public void resultFetch() {
-        
+
         // 리스트로 멤버 조회
         List<Member> fetchList = queryFactory
                 .selectFrom(member)
@@ -230,7 +233,7 @@ public class QuerydslBasicTest {
 
         Tuple teamA = result.get(0);
         Tuple teamB = result.get(1);
-        
+
         // then
         assertThat(teamA.get(team.name)).isEqualTo("teamA");
         assertThat(teamA.get(member.age.avg())).isEqualTo(15);
@@ -280,18 +283,17 @@ public class QuerydslBasicTest {
                 .containsExactly("teamA", "teamB");
 
         assertThat(result.size()).isEqualTo(2);
-        
+
     }
 
     /**
-     *
      * 회원과 팀을 조인하면서,
      * 팀 이름이 teamA인 팀만 조인,
      * 회원은 모두 조회
-     *
+     * <p>
      * JPQL:
-     *      SELECT m, t FROM Member m, Team t
-     *      left join m.team t on t.name = 'teamA'
+     * SELECT m, t FROM Member m, Team t
+     * left join m.team t on t.name = 'teamA'
      */
     @Test
     public void join_on_filtering() throws Exception {
@@ -333,7 +335,9 @@ public class QuerydslBasicTest {
 
     }
 
-    @PersistenceUnit EntityManagerFactory emf;
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
     @Test
     public void fetchJoinNo() throws Exception {
 
@@ -572,7 +576,7 @@ public class QuerydslBasicTest {
                         member.username.as("name"),
                         ExpressionUtils.as(
                                 select(memberSub.age.max())
-                                .from(memberSub), "age"))
+                                        .from(memberSub), "age"))
                 )
                 .from(member)
                 .fetch();
@@ -668,4 +672,104 @@ public class QuerydslBasicTest {
         return ageCond != null ? member.age.eq(ageCond) : null;
     }
 
+    @Test
+    public void bulkUpdate() {
+
+        /**
+         * member1, 10
+         * member2, 20
+         * member3, 30
+         * member4, 40
+         */
+
+        long count = queryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+
+        /**
+         *
+         * expected:
+         * member1 -> 비회원
+         * member2 -> 비회원
+         * member3 -> member3
+         * member4 -> member4
+         */
+
+        /**
+         * 영속성 컨텍스트 내에 존재하는 변경하지 않은 값 그대로 출력됨
+         * 원하는 값을 얻기 위해서는, flush/clear 작업을 수행해야 함.
+         */
+
+        em.flush();
+        em.clear();
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .fetch();
+
+        for (Member m : result) {
+            System.out.println("member = " + m);
+        }
+    }
+
+    @Test
+    public void bulkAdd() {
+
+        long count = queryFactory
+                .update(member)
+                .set(member.age, member.age.add(1))
+                .execute();
+    }
+
+    @Test
+    public void bulkMultiply() {
+
+        long count = queryFactory
+                .update(member)
+                .set(member.age, member.age.multiply(2))
+                .execute();
+    }
+
+
+    @Test
+    public void bulkDelete() {
+
+        long count = queryFactory
+                .delete(member)
+                .where(member.age.gt(18))
+                .execute();
+    }
+
+    @Test
+    public void sqlFunction() {
+
+        List<String> result = queryFactory
+                .select(stringTemplate(
+                        "function('replace', {0}, {1}, {2})",
+                        member.username, "member", "M"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+    }
+
+    @Test
+    public void sqlFunction2() {
+
+        List<String> result = queryFactory
+                .select(member.username)
+                .from(member)
+//                .where(member.username.eq(
+//                        stringTemplate("function('lower', {0})", member.username)))
+                .where(member.username.eq(member.username.lower()))
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+    }
 }
